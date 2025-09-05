@@ -7,6 +7,12 @@ import time
 from math import tan
 port = '/dev/ttyACM0'
 serialport=""
+newdatatoUSB=False
+velocity=0.0
+steer=0.0
+buzz=0
+squirt=0
+
 #odos, steers, spds, batts, drv_current, current, errors,drv_pwm
 L=0.69  #vehicle length in m for kinematics Twist message
 
@@ -24,6 +30,9 @@ class CeresPublisher(Node):
         self.pubError = self.create_publisher(Int16, 'CeresError', 10)
         self.pubOdo= self.create_publisher(Int16, 'CeresOdo', 10)
 
+        self.speedsub = self.create_subscription(Float64, 'CeresSpeed', self.speedcallback, 10)
+        self.steersub = self.create_subscription(Float64, 'CeresSteer', self.steercallback, 10)
+
         # Now set a timer
         timer_period = 0.5  # seconds
         #self.timer = self.create_timer(timer_period, self.timer_callback)
@@ -33,13 +42,26 @@ class CeresPublisher(Node):
         print("Bang!")
         msg = Float64()
         msg.data = 36.2
-        self.pubAspd.publish(msg)
+        #self.pubAspd.publish(msg)
 
 
     def shutdown(self):
         rospy.loginfo("Stopping the robot...")
         global serialport
         serialport.close()
+
+    def speedcallback(self,msg):
+        global velocity
+        global newdatatoUSB
+        velocity = msg.data
+        newdatatoUSB = True
+        #print("Speed callback")
+
+    def steercallback(self,msg):
+        global steer
+        global newdatatoUSB
+        steer = msg.data
+        newdatatoUSB = True
 
 def read_robot(datastring,p):  # $odom,steerangle,act velocity,lat,lonbearing
     global serialport
@@ -159,8 +181,7 @@ def wait_USB():
 def main(args=None):
     
     rclpy.init(args=args)
-
-    # port=arduino_ports[0]
+    global newdatatoUSB
 
     ceres_publisher = CeresPublisher()
     portOK = False
@@ -192,7 +213,15 @@ def main(args=None):
             # return none
 
                 #ceres_publisher.pubAspd.publish(msg)
-        #rclpy.spin_once(ceres_publisher, timeout_sec=0.1)
+        rclpy.spin_once(ceres_publisher, timeout_sec=0.1)
+        if newdatatoUSB == True:
+            print("Sending")
+            print(f"${steer},{velocity},{buzz},{squirt}\r\n")
+            serialport.write(b'$'+bytes(str(steer),"utf-8")+b','+bytes(str(velocity),"utf-8")+b','+bytes(str(buzz),"utf-8")+b','+bytes(str(squirt),"utf-8"))
+            #print('$%2.1f,%2.1f,%d,%d:\r\n' % (steer, velocity, buzz, squirt))
+            #serialport.write('$%2.1f,%2.1f,%d,%d:\r\n' % (steer, velocity, buzz, squirt))
+            #serialport.write(b'hello'+bytes(str(steer),"utf-8")) # res = bytes(s, "utf-8")
+            newdatatoUSB = False
     ceres_publisher.destroy_node()
     rclpy.shutdown()
 
